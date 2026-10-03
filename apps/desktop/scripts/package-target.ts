@@ -475,7 +475,9 @@ export async function packageTarget(
   await execute(['run', 'prepare:runtime', ...(signPrimaryRuntime ? ['--defer-primary-runtime-smoke'] : [])], downloadEnv)
   if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime'], electronBuilderEnv)
   await execute(['run', 'prepare:packages'], targetEnv)
-  await execute(['run', 'prepare:dsh', ...(signPrimaryRuntime ? ['--defer-runtime-smoke'] : [])], downloadEnv)
+  // Personal-fork unsigned builds also defer the runtime smoke test: the x64 LibreOffice
+  // binary runs under Rosetta on the ARM64 build host and times out there.
+  await execute(['run', 'prepare:dsh', ...((signPrimaryRuntime || environment.DSH_DESKTOP_SKIP_MAC_SIGNING === '1') ? ['--defer-runtime-smoke'] : [])], downloadEnv)
   if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime', '--dsh'], electronBuilderEnv)
   if (invocation.prepareOnly) return
   // Personal-fork unsigned builds skip Apple notarization entirely.
