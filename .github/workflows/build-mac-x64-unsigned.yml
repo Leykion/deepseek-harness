@@ -1,0 +1,70 @@
+name: Build macOS x64 (unsigned, personal fork)
+
+# Personal unsigned Intel-Mac build.
+# Trigger: push this file, or run manually from the Actions tab (workflow_dispatch).
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-mac-x64-unsigned.yml'
+
+permissions:
+  contents: write
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+  DSH_DESKTOP_SKIP_MAC_SIGNING: '1'
+  PRIMARY_NODE_VERSION: '24'
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Restore pnpm store
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: macos-15-node24-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            macos-15-node24-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Save pnpm store
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: macos-15-node24-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Package macOS x64 (unsigned)
+        run: pnpm --filter @deepseek-ai/dsh-desktop run package:mac:x64
+
+      - name: Create pre-release with installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ARTIFACT="$(find . -path '*/node_modules' -prune -o -name '*.dmg' -print 2>/dev/null | head -1)"
+          if [ -z "$ARTIFACT" ]; then
+            ARTIFACT="$(find . -path '*/node_modules' -prune -o -name '*.zip' -print 2>/dev/null | head -1)"
+          fi
+          if [ -z "$ARTIFACT" ]; then
+            echo "ERROR: no .dmg or .zip artifact found"
+            exit 1
+          fi
+          echo "Found artifact: $ARTIFACT ($(du -h "$ARTIFACT" | cut -f1))"
+          TAG="mac-x64-unsigned-$(date +%Y%m%d-%H%M%S)"
+          gh release create "$TAG" \
+            --prerelease \
+            --title "macOS x64 unsigned build ($TAG)" \
+            --notes "Unsigned Intel-Mac build of DeepSeek Harness desktop from a personal fork (no Apple signing certificate). First launch: right-click the app -> Open to bypass Gatekeeper, or run: xattr -cr 'DeepSeek Harness.app'" \
+            "$ARTIFACT"
