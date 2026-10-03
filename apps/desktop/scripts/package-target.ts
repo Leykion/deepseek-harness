@@ -366,8 +366,13 @@ async function main(): Promise<void> {
       recordPackagingEvent(run.directory, { type: 'macos-settings', packConcurrency: settings.packConcurrency,
         downloadProxyConfigured: settings.downloadProxy !== undefined,
         notarizationProxyConfigured: settings.notarizationProxy !== undefined })
-      await packagingStep(run.directory, 'macos-package', () => withMacOSSigningKeychain(environment,
-        signingEnvironment => packageTarget(invocation, signingEnvironment, run)), secrets)
+      // Personal-fork unsigned builds: DSH_DESKTOP_SKIP_MAC_SIGNING=1 skips the
+      // Apple signing keychain (no Developer ID certificate available).
+      const skipMacOSSigning = environment.DSH_DESKTOP_SKIP_MAC_SIGNING === '1'
+      await packagingStep(run.directory, 'macos-package', () => skipMacOSSigning
+        ? packageTarget(invocation, environment, run)
+        : withMacOSSigningKeychain(environment,
+          signingEnvironment => packageTarget(invocation, signingEnvironment, run)), secrets)
     } else {
       await packagingStep(run.directory, 'windows-package', () => packageTarget(invocation, environment, run), secrets)
     }
@@ -473,25 +478,34 @@ export async function packageTarget(
   await execute(['run', 'prepare:dsh', ...(signPrimaryRuntime ? ['--defer-runtime-smoke'] : [])], downloadEnv)
   if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime', '--dsh'], electronBuilderEnv)
   if (invocation.prepareOnly) return
+  // Personal-fork unsigned builds skip Apple notarization entirely.
+  const skipMacOSSigning = environment.DSH_DESKTOP_SKIP_MAC_SIGNING === '1'
   if (target.platform === 'darwin' && !invocation.directory) {
-    await execute([
-      ...desktopElectronBuilderArguments(target, true),
-      '--config.mac.notarize=false',
-    ], electronBuilderEnv)
-    await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
-    await withMacOSNotarizationProxy(mac?.notarizationProxy, () => packageMacOSArtifacts({
-      arch: target.arch,
-      // electron-builder named these artifacts after the published version, so locating them uses the same identifier.
-      version: resolveDesktopBuildVersion(environment, packageVersion(join(APP_ROOT, 'package.json'), 'desktop package')),
-      artifactsRoot: buildPaths.artifacts,
-      environment: electronBuilderEnv,
-    }, artifact => execute(desktopElectronBuilderArguments(target, false, artifact), electronBuilderEnv)), undefined, undefined, proxyEvent)
+    if (skipMacOSSigning) {
+      // Unsigned: single electron-builder pass straight to dmg/zip, no notarization.
+      await execute(desktopElectronBuilderArguments(target, false), electronBuilderEnv)
+    } else {
+      await execute([
+        ...desktopElectronBuilderArguments(target, true),
+        '--config.mac.notarize=false',
+      ], electronBuilderEnv)
+      await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
+      await withMacOSNotarizationProxy(mac?.notarizationProxy, () => packageMacOSArtifacts({
+        arch: target.arch,
+        // electron-builder named these artifacts after the published version, so locating them uses the same identifier.
+        version: resolveDesktopBuildVersion(environment, packageVersion(join(APP_ROOT, 'package.json'), 'desktop package')),
+        artifactsRoot: buildPaths.artifacts,
+        environment: electronBuilderEnv,
+      }, artifact => execute(desktopElectronBuilderArguments(target, false, artifact), electronBuilderEnv)), undefined, undefined, proxyEvent)
+    }
   } else if (target.platform === 'darwin') {
     await execute([...desktopElectronBuilderArguments(target, true), '--config.mac.notarize=false'], electronBuilderEnv)
     await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
-    const appPath = join(buildPaths.artifacts, target.arch === 'arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app')
-    await withMacOSNotarizationProxy(mac?.notarizationProxy,
-      () => notarizeMacOS({ appPath, ...resolveMacOSNotarizationEnvironment(environment) }), undefined, undefined, proxyEvent)
+    if (!skipMacOSSigning) {
+      const appPath = join(buildPaths.artifacts, target.arch === 'arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app')
+      await withMacOSNotarizationProxy(mac?.notarizationProxy,
+        () => notarizeMacOS({ appPath, ...resolveMacOSNotarizationEnvironment(environment) }), undefined, undefined, proxyEvent)
+    }
   } else {
     await signedStage('artifacts', () => execute(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv))
     await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts', ...(invocation.unsigned ? ['--unsigned'] : [])], targetEnv)
