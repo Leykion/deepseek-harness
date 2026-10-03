@@ -92,7 +92,8 @@ export function validateDesktopPackageEnvironment(environment, target, options =
       keyContainer: environment.DSH_DESKTOP_WINDOWS_KEY_CONTAINER,
     })
     if (!options.prepareOnly) resolveWindowsSignatureCacheDirectory(environment)
-  } else {
+  } else if (environment.DSH_DESKTOP_SKIP_MAC_SIGNING !== '1') {
+    // Personal-fork unsigned builds skip Apple signing and notarization requirements.
     resolveMacOSSigningEnvironment(environment)
     const strategies = [
       ['APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID'],
