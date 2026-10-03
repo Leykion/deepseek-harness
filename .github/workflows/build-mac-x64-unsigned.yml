@@ -46,6 +46,21 @@ jobs:
           path: ~/.local/share/pnpm/store
           key: macos-15-node24-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
 
+      - name: Create unsigned-build .env.macos
+        run: |
+          cat > apps/desktop/.env.macos <<'EOF'
+          # Minimal release settings for the personal unsigned fork build.
+          # Apple signing / notarization inputs are intentionally omitted;
+          # DSH_DESKTOP_SKIP_MAC_SIGNING=1 makes validation and electron-builder skip them.
+          DSH_DESKTOP_APP_ID=com.deepseek.harness
+          DSH_DESKTOP_AUTO_UPDATE_ENV=test
+          DOWNLOAD_TEST_ORIGIN=https://example.com
+          DOWNLOAD_TEST_RELEASE_ID=0123456789abcdef0123456789abcdef
+          DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN=https://example.com
+          DSH_DESKTOP_MANDATORY_UPDATE_CONFIG='{"allowedAuthOrigins":["https://login.example.com"]}'
+          DSH_DESKTOP_MACOS_PACK_CONCURRENCY=4
+          EOF
+
       - name: Package macOS x64 (unsigned)
         run: pnpm --filter @deepseek-ai/dsh-desktop run package:mac:x64
 
