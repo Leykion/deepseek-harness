@@ -59,6 +59,10 @@ jobs:
       # NOTE: upload-artifact's glob does not match the hidden .desktop-build
       # directory (verified 2026-10-27: "No files were found"), so archive it
       # into a visible tarball first and upload that instead.
+      # SCOPE: archive packaging-runs/ only, not the whole .desktop-build —
+      # the full dir includes the built .app/dmg targets (~1.4 GB in run
+      # 40490918692, too large to download from the sandbox); the run journals
+      # alone are a few MB and suffice for diagnosis.
       - name: Show packaging run events (on failure)
         if: failure()
         run: |
@@ -73,8 +77,8 @@ jobs:
       - name: Archive packaging logs (on failure)
         if: failure()
         run: |
-          if [ -d apps/desktop/.desktop-build ]; then
-            tar -czf packaging-logs.tar.gz -C apps/desktop .desktop-build
+          if [ -d apps/desktop/.desktop-build/packaging-runs ]; then
+            tar -czf packaging-logs.tar.gz -C apps/desktop/.desktop-build packaging-runs
             ls -lh packaging-logs.tar.gz
           else
             echo "no packaging run directory found; nothing to archive"
