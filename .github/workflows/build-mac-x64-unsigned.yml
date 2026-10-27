@@ -56,6 +56,9 @@ jobs:
       # captured stdout/stderr logs) as a downloadable artifact. The packaging
       # code redacts credential values before recording them, and the run dir
       # lives at apps/desktop/.desktop-build/packaging-runs/.
+      # NOTE: upload-artifact's glob does not match the hidden .desktop-build
+      # directory (verified 2026-10-27: "No files were found"), so archive it
+      # into a visible tarball first and upload that instead.
       - name: Show packaging run events (on failure)
         if: failure()
         run: |
@@ -67,13 +70,23 @@ jobs:
             echo "no packaging run directory found"
           fi
 
+      - name: Archive packaging logs (on failure)
+        if: failure()
+        run: |
+          if [ -d apps/desktop/.desktop-build ]; then
+            tar -czf packaging-logs.tar.gz -C apps/desktop .desktop-build
+            ls -lh packaging-logs.tar.gz
+          else
+            echo "no packaging run directory found; nothing to archive"
+          fi
+
       - name: Upload packaging logs (on failure)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: packaging-logs-${{ github.run_id }}
-          path: apps/desktop/.desktop-build
-          if-no-files-found: warn
+          path: packaging-logs.tar.gz
+          if-no-files-found: error
           retention-days: 30
 
       - name: Create pre-release with installer
