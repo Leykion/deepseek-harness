@@ -5,6 +5,16 @@ name: Build macOS x64 (unsigned, personal fork)
 # which supersedes the Oct 3 DSH_DESKTOP_SKIP_MAC_SIGNING patches.
 # On packaging failure, the packaging run journal is uploaded as an artifact
 # (packaging-logs-<run id>) so the failing sub-step can be diagnosed.
+#
+# RUNNER: macos-15-intel (x86_64), NOT macos-15 (which is arm64).
+# Runs 40479703834 / 40486680518 / 40490918692 / 40498085942 all failed on
+# macos-15 at the post-build smoke test (scripts/smoke-packaged-runtime.ts):
+# the x64 Electron binary ran under Rosetta 2 and the payload checks blew
+# past the 120s execFile timeout in smoke-prepared-runtime.ts, dying with
+# SIGTERM at a different check each run (koffi / pty / search) -- the random
+# stop point is the tell that this is translation overhead, not a broken
+# module. The DMG itself built fine (electron-builder exited 0) every time.
+# Building x64 on an x64 host removes Rosetta from the picture entirely.
 # Trigger: push this file, or run manually from the Actions tab (workflow_dispatch).
 on:
   workflow_dispatch:
@@ -21,7 +31,8 @@ env:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-15-intel
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
 
@@ -35,9 +46,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ~/.local/share/pnpm/store
-          key: macos-15-node24-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          key: macos-15-intel-node24-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
-            macos-15-node24-pnpm-
+            macos-15-intel-node24-pnpm-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -47,7 +58,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ~/.local/share/pnpm/store
-          key: macos-15-node24-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          key: macos-15-intel-node24-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Package macOS x64 (unsigned)
         run: pnpm --filter @deepseek-ai/dsh-desktop run package:mac:x64:unsigned
