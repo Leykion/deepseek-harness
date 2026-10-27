@@ -3,6 +3,8 @@ name: Build macOS x64 (unsigned, personal fork)
 # Personal unsigned Intel-Mac build, synced to upstream 2026-10-27.
 # Upstream now ships native --unsigned support (package:mac:x64:unsigned),
 # which supersedes the Oct 3 DSH_DESKTOP_SKIP_MAC_SIGNING patches.
+# On packaging failure, the packaging run journal is uploaded as an artifact
+# (packaging-logs-<run id>) so the failing sub-step can be diagnosed.
 # Trigger: push this file, or run manually from the Actions tab (workflow_dispatch).
 on:
   workflow_dispatch:
@@ -49,6 +51,30 @@ jobs:
 
       - name: Package macOS x64 (unsigned)
         run: pnpm --filter @deepseek-ai/dsh-desktop run package:mac:x64:unsigned
+
+      # On failure, preserve the packaging run journal (events.jsonl plus the
+      # captured stdout/stderr logs) as a downloadable artifact. The packaging
+      # code redacts credential values before recording them, and the run dir
+      # lives at apps/desktop/.desktop-build/packaging-runs/.
+      - name: Show packaging run events (on failure)
+        if: failure()
+        run: |
+          RUN_DIR="$(ls -dt apps/desktop/.desktop-build/packaging-runs/*/ 2>/dev/null | head -1)"
+          if [ -n "$RUN_DIR" ]; then
+            echo "=== $RUN_DIR ==="
+            tail -n 100 "$RUN_DIR/events.jsonl" 2>/dev/null || echo "(no events.jsonl)"
+          else
+            echo "no packaging run directory found"
+          fi
+
+      - name: Upload packaging logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaging-logs-${{ github.run_id }}
+          path: apps/desktop/.desktop-build
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Create pre-release with installer
         env:
